@@ -1,14 +1,27 @@
+//#region Requirements
 const express = require("express");
 const app = express();
 
 require("dotenv").config();
 const cors = require("cors");
+const bodyParser = require("body-parser");
+const multer = require("multer");
+const upload = multer();
+//#endregion
+
+//#region middleware
+app.use(upload.none());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+app.use(bodyParser.json());
+
 app.use(
   cors({
     origin: process.env.ORIGIN,
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "DELETE"],
   })
 );
+//#endregion
 
 const PORT = process.env.PORT;
 
@@ -31,6 +44,7 @@ app.get("/home", (req, res) => {
       price: 350000,
       discount: 0,
       url: 1,
+      status: 1,
     },
     {
       name: "Samsung Galaxy S24 Ultra",
@@ -39,6 +53,7 @@ app.get("/home", (req, res) => {
       price: 450000,
       discount: 2.5,
       url: 4,
+      status: 0,
     },
     {
       name: "IPhone 14 Pro Max",
@@ -47,6 +62,7 @@ app.get("/home", (req, res) => {
       price: 400000,
       discount: 10,
       url: 2,
+      status: 1,
     },
     {
       name: "IPhone 14",
@@ -55,11 +71,24 @@ app.get("/home", (req, res) => {
       price: 350000,
       discount: 5,
       url: 3,
+      status: 1,
     },
   ];
   //#endregion
   
   res.json(data).status(200);
+});
+
+app.delete("/admin/product/delete", (req, res) => {
+  const id = req.query.id
+  // TODO : implement removing from the database
+  res.status(200).json({state : "deleted"})
+});
+
+app.post("/admin/product/statechange", (req, res)=>{
+  const id = req.body.id;
+  // TODO : implement changing state from the database
+  res.status(200).json({ id: id });
 });
 
 app.listen(PORT, () => {
