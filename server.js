@@ -7,6 +7,7 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const multer = require("multer");
 const upload = multer();
+const bcrypt = require("bcrypt");
 
 const DBConnect = require("./Utils/DBConnect.js");
 const connection = DBConnect.connect();
@@ -27,6 +28,7 @@ app.use(
 //#endregion
 
 const PORT = process.env.PORT;
+const SALT = 10;
 
 app.get("/test", (req, res) => {
   res.json({ Result: "Working" });
@@ -68,67 +70,78 @@ app.post("/admin/product/statechange", (req, res) => {
 app.post("/login/:userType", (req, res) => {
   const type = req.params.userType;
   const data = req.body;
-  connection.query(
-    `SELECT count(*) AS Users FROM Login WHERE Email='${data.email}' AND Password='${data.password}'`,
-    (err, result) => {
-      if (err) {
-        console.error(`Error fetching data : \n${err}`);
-        res.status(500).json({ error: "Failed to execute Query" });
-      } else {
-        if (result[0].Users === 1) {
-          if (type === "admin" && data.username === "Admin") {
-            res.status(200).json({ Access: "Granted", redirect: "/admin" });
-          } else {
-            res.status(200).json({ Access: "Granted" });
-          }
-        } else {
-          res.status(200).json({ Access: "Denied" });
+  try {
+    connection.query(
+      `SELECT * FROM Login WHERE Email='${data.email}'`,
+      (err, result) => {
+        if (err) {
+          Error("Error getting emails : \n" + err);
+        }
+        if (result.length === 1) {
+          bcrypt.compare(data.password, result[0].Password, (err, result) => {
+            if (err) {
+              Error("Error decrypting password : \n" + err);
+            }
+            if (result) {
+              if (type === "admin" && data.email === "admin@admin.com") {
+                res.status(200).json({ Access: true, redirect: "/admin" });
+              } else {
+                res.status(200).json({ Access: true });
+              }
+            } else {
+              res.status(200).json({ Access: false });
+            }
+          });
         }
       }
-    }
-  );
+    );
+  } catch (error) {
+    console.log(err);
+    res.status(200).json({ error: "Internal Server Error" });
+  }
+  return;
 });
 
 app.post("/signup", async (req, res) => {
   const data = req.body;
 
   try {
-    connection.query(`SELECT COUNT(*) AS Users FROM Login WHERE Email='${data.email}'`, (err,result)=>{
-      if(err){
-        Error("Error Validating User : \n"+err)
+    connection.query(
+      `SELECT COUNT(*) AS Users FROM Login WHERE Email='${data.email}'`,
+      (err, result) => {
+        if (err) {
+          Error("Error Validating User : \n" + err);
+        }
+        if (result[0].Users === 0) {
+          bcrypt.hash(data.password, SALT, (err, result) => {
+            if (err) {
+              Error("Error encrpting data : \n" + err);
+            }
+            connection.query(
+              `INSERT INTO Login (Email, Name, Password) VALUES ('${data.email.toLowerCase()}', '${
+                data.name
+              }', '${result}');`,
+              (err, result) => {
+                if (err) {
+                  Error("Error adding user : \n" + err);
+                }
+                if (result.affectedRows === 1) {
+                  res
+                    .status(200)
+                    .json({ message: "User added", signedUp: true });
+                }
+              }
+            );
+          });
+        } else {
+          res.status(200).json({ message: "User already exist" });
+        }
       }
-      if(result[0].Users === 0){
-        connection.query(`INSERT INTO Login (Email, Name, Password) VALUES ('${data.email.toLowerCase()}', '${data.name}', '${data.password}');`, (err, result)=>{
-          if(err){
-            Error("Error adding user : \n"+err)
-          }
-          if(result.affectedRows===1){
-            res.status(200).json({ message: "User added", signedUp :true});
-          }
-        })
-      }else{
-        res.status(200).json({message:"User already exist"})
-      }
-    })
-    
+    );
   } catch (error) {
-    
+    console.error(error);
+    res.status(200).json({ error: "Internal server error" });
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  
 });
 
 app.listen(PORT, () => {
