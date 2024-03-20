@@ -3,8 +3,11 @@ const express = require("express");
 const app = express();
 
 require("dotenv").config();
+
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const cookieParser = require("cookie-parser");
+const session = require("express-session");
 const multer = require("multer");
 const upload = multer();
 const bcrypt = require("bcrypt");
@@ -23,6 +26,22 @@ app.use(
   cors({
     origin: process.env.ORIGIN.split(","),
     methods: ["GET", "POST", "DELETE"],
+    credentials: true,
+  })
+);
+
+app.use(cookieParser());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+app.use(
+  session({
+    key: "userID",
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      expires: 60 * 60 * 24 * 3,
+    },
   })
 );
 //#endregion
@@ -67,22 +86,34 @@ app.post("/admin/product/statechange", (req, res) => {
   );
 });
 
+app.get("/login", (req, res) => {
+  if (req.session.user) {
+    res.status(200).json({ loggedIn: true, user: req.session.user });
+  } else {
+    res.status(200).json({ loggedIn: false });
+  }
+});
+
 app.post("/login/:userType", (req, res) => {
   const type = req.params.userType;
   const data = req.body;
   try {
     connection.query(
-      `SELECT * FROM Login WHERE Email='${data.email}'`,
-      (err, result) => {
+      `SELECT * FROM Users WHERE Email='${data.email}'`,
+      (err, DBresult) => {
         if (err) {
           Error("Error getting emails : \n" + err);
         }
-        if (result.length === 1) {
-          bcrypt.compare(data.password, result[0].Password, (err, result) => {
+        if (DBresult.length === 1) {
+          bcrypt.compare(data.password, DBresult[0].Password, (err, result) => {
             if (err) {
               Error("Error decrypting password : \n" + err);
             }
             if (result) {
+              req.session.user = {
+                Email: DBresult[0].Email,
+                Name: DBresult[0].Name,
+              };
               if (type === "admin" && data.email === "admin@admin.com") {
                 res.status(200).json({ Access: true, redirect: "/admin" });
               } else {
@@ -107,7 +138,7 @@ app.post("/signup", async (req, res) => {
 
   try {
     connection.query(
-      `SELECT COUNT(*) AS Users FROM Login WHERE Email='${data.email}'`,
+      `SELECT COUNT(*) AS Users FROM Users WHERE Email='${data.email}'`,
       (err, result) => {
         if (err) {
           Error("Error Validating User : \n" + err);
@@ -118,7 +149,7 @@ app.post("/signup", async (req, res) => {
               Error("Error encrpting data : \n" + err);
             }
             connection.query(
-              `INSERT INTO Login (Email, Name, Password) VALUES ('${data.email.toLowerCase()}', '${
+              `INSERT INTO Users (Email, Name, Password) VALUES ('${data.email.toLowerCase()}', '${
                 data.name
               }', '${result}');`,
               (err, result) => {
