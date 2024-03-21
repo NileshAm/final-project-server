@@ -14,6 +14,11 @@ const bcrypt = require("bcrypt");
 
 const DBConnect = require("./Utils/DBConnect.js");
 const connection = DBConnect.connect();
+const getServerURL = require("./Utils/ServerInfo.js").getURL;
+
+const stripe = require("stripe")(process.env.STRIPE_PRIVATE_KEY);
+
+const axios = require("axios");
 //#endregion
 
 //#region middleware
@@ -175,6 +180,99 @@ app.post("/signup", async (req, res) => {
   }
 });
 
+app.post("/cart/edit", (req, res) => {
+  const data = req.body;
+  try {
+    if (data.delete !== "undefined") {
+      connection.query(
+        `DELETE FROM Cart where CartID = ${data.cartID} and ProductID = ${data.productID}`,
+        (err, result) => {
+          if (err) {
+            Error("Error accessing database : \n" + err);
+          }
+          if (result.affectedRows === 1) {
+            res.status(200).json({ updateStatus: true });
+          } else {
+            res.status(200).json({ updateStatus: false });
+          }
+        }
+      );
+    } else {
+      connection.query(
+        `UPDATE Cart SET Quantity = '${data.quantity}' WHERE (CartID = '${data.cartID}') and (ProductID = '${data.productID}');`,
+        (err, result) => {
+          if (err) {
+            Error("Error occured Updating data : \n" + err);
+          }
+
+          if (result.affectedRows === 1) {
+            res.status(200).json({ updateStatus: true });
+          } else {
+            res.status(200).json({ updateStatus: false });
+          }
+        }
+      );
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(200).json({ error: "Internal Server Error" });
+  }
+});
+
+app.get("/cart", (req, res) => {
+  const id = req.query.id;
+  if (!id) {
+    res.status(200).json({ error: "No ID sent" });
+    return;
+  }
+  try {
+    connection.query(`call GetCartPerUser('${id}');`, (err, result) => {
+      if (err) {
+        Error("Error fetching data : \n" + err);
+      }
+      res.status(200).json(result[0]);
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(200).json({ err: "Internal Server Error" });
+  }
+});
+
+app.post("/checkout/online", (req, res) => {
+  const id = req.body.user;
+
+  axios.get(getServerURL(`/cart?id=${id}`)).then(async (result) => {
+    try {
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        customer_email: id,
+        mode: "payment",
+        line_items: result.data.map((item) => {
+          return {
+            price_data: {
+              currency: "lkr",
+              product_data: {
+                name: item.Name,
+                images: [item.Image],
+              },
+              tax_behavior: "inclusive",
+              unit_amount: item.Price * (100 - item.Discount),
+            },
+            quantity: item.Quantity,
+          };
+        }),
+        success_url: decodeURIComponent(req.body.successURL),
+        cancel_url: decodeURIComponent(req.body.cancelURL),
+      });
+      console.log(session);
+
+      res.json({ completed: true, url: session.url });
+    } catch (error) {
+      console.error(error);
+      res.json({ completed: false });
+    }
+  });
+});
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
 });
