@@ -185,7 +185,7 @@ app.post("/cart/edit", (req, res) => {
   try {
     if (data.delete !== "undefined") {
       connection.query(
-        `DELETE FROM Cart where CartID = ${data.cartID} and ProductID = ${data.productID}`,
+        `DELETE FROM CartData where CartID = ${data.cartID} and ProductID = ${data.productID}`,
         (err, result) => {
           if (err) {
             Error("Error accessing database : \n" + err);
@@ -199,7 +199,7 @@ app.post("/cart/edit", (req, res) => {
       );
     } else {
       connection.query(
-        `UPDATE Cart SET Quantity = '${data.quantity}' WHERE (CartID = '${data.cartID}') and (ProductID = '${data.productID}');`,
+        `UPDATE CartData SET Quantity = '${data.quantity}' WHERE (CartID = '${data.cartID}') and (ProductID = '${data.productID}');`,
         (err, result) => {
           if (err) {
             Error("Error occured Updating data : \n" + err);
