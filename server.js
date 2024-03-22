@@ -132,7 +132,7 @@ app.post("/login/:userType", (req, res) => {
       }
     );
   } catch (error) {
-    console.log(err);
+    console.error(err);
     res.status(200).json({ error: "Internal Server Error" });
   }
   return;
@@ -220,7 +220,13 @@ app.post("/cart/edit", (req, res) => {
 });
 
 app.get("/cart", (req, res) => {
-  const id = req.query.id;
+  console.log(req.session);
+  let id = null;
+  if (req.session.user) {
+    id = req.session.user.Email;
+  } else {
+    id = req.query.id;
+  }
   if (!id) {
     res.status(200).json({ error: "No ID sent" });
     return;
@@ -229,6 +235,9 @@ app.get("/cart", (req, res) => {
     connection.query(`call GetCartPerUser('${id}');`, (err, result) => {
       if (err) {
         Error("Error fetching data : \n" + err);
+      }
+      if (req.session.user && result[0].length !== 0) {
+        req.session.user.CartID = result[0][0].CartID;
       }
       res.status(200).json(result[0]);
     });
@@ -239,8 +248,7 @@ app.get("/cart", (req, res) => {
 });
 
 app.post("/checkout/online", (req, res) => {
-  const id = req.body.user;
-
+  const id = req.session.user.Email;
   axios.get(getServerURL(`/cart?id=${id}`)).then(async (result) => {
     try {
       const session = await stripe.checkout.sessions.create({
@@ -261,16 +269,10 @@ app.post("/checkout/online", (req, res) => {
             quantity: item.Quantity,
           };
         }),
-        success_url: decodeURIComponent(
-          req.body.successURL + "?session_id={CHECKOUT_SESSION_ID}"
-        ),
-        cancel_url: decodeURIComponent(
-          req.body.cancelURL + "?session_id={CHECKOUT_SESSION_ID}"
-        ),
+        success_url: decodeURIComponent(req.body.successURL),
+        cancel_url: decodeURIComponent(req.body.cancelURL),
       });
-      connection.query(
-        `CALL CheckoutOnline(${result.data[0].CartID}, '${session.id}')`
-      );
+      req.session.user.CheckoutID = session.id;
       res.json({ completed: true, url: session.url });
     } catch (error) {
       console.error(error);
@@ -280,21 +282,27 @@ app.post("/checkout/online", (req, res) => {
 });
 
 app.post("/checkout/online/verify", async (req, res) => {
-  const data = req.body;
+  const data = req.session.user;
+  if (!data.CheckoutID || !data.CartID) {
+    res.json({ error: "no CheckoutID or CardID" });
+  }
   try {
-    const session = await stripe.checkout.sessions.retrieve(data.session_id);
-    console.log(session);
+    const session = await stripe.checkout.sessions.retrieve(data.CheckoutID);
+
     connection.query(
-      `CALL CheckoutOnlineVerify('${data.session_id}', '${session.payment_intent}');`,
+      `CALL CheckoutOnlineVerify('${data.CartID}', '${session.payment_intent}');`,
       (err, result) => {
         console.log(err, result);
         if (err) {
           Error("Error fetching from database : \n" + err);
-        }
-        if (result.affectedRows === 1) {
-          res.json({ updated: true });
         } else {
-          res.json({ updated: false });
+          req.session.user.CheckoutID = null;
+          req.session.user.CartID = null;
+          if (result.affectedRows === 1) {
+            res.json({ updated: true });
+          } else {
+            res.json({ updated: false });
+          }
         }
       }
     );
@@ -305,27 +313,13 @@ app.post("/checkout/online/verify", async (req, res) => {
 });
 
 app.post("/checkout/online/cancel", async (req, res) => {
-  const data = req.body;
-
-  try {
-    connection.query(
-      `CALL CheckoutOnlineCancel('${data.session_id}')`,
-      (err, result) => {
-        if (err) {
-          Error("Error fetching data : \n" + err);
-        }
-
-        if (result.affectedRows === 1) {
-          res.json({ updated: true });
-        } else {
-          res.json({ updated: false });
-        }
-      }
-    );
-  } catch (error) {
-    console.error(error);
-    res.json({ error: "Internal server error" });
+  const data = req.session.user;
+  console.log(data);
+  if (data) {
+    data.CartID = null;
+    data.CheckoutID = null;
   }
+  console.log(data);
 });
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
