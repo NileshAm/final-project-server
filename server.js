@@ -261,17 +261,71 @@ app.post("/checkout/online", (req, res) => {
             quantity: item.Quantity,
           };
         }),
-        success_url: decodeURIComponent(req.body.successURL),
-        cancel_url: decodeURIComponent(req.body.cancelURL),
+        success_url: decodeURIComponent(
+          req.body.successURL + "?session_id={CHECKOUT_SESSION_ID}"
+        ),
+        cancel_url: decodeURIComponent(
+          req.body.cancelURL + "?session_id={CHECKOUT_SESSION_ID}"
+        ),
       });
-      console.log(session);
-
+      connection.query(
+        `CALL CheckoutOnline(${result.data[0].CartID}, '${session.id}')`
+      );
       res.json({ completed: true, url: session.url });
     } catch (error) {
       console.error(error);
       res.json({ completed: false });
     }
   });
+});
+
+app.post("/checkout/online/verify", async (req, res) => {
+  const data = req.body;
+  try {
+    const session = await stripe.checkout.sessions.retrieve(data.session_id);
+    console.log(session);
+    connection.query(
+      `CALL CheckoutOnlineVerify('${data.session_id}', '${session.payment_intent}');`,
+      (err, result) => {
+        console.log(err, result);
+        if (err) {
+          Error("Error fetching from database : \n" + err);
+        }
+        if (result.affectedRows === 1) {
+          res.json({ updated: true });
+        } else {
+          res.json({ updated: false });
+        }
+      }
+    );
+  } catch (error) {
+    console.error(error);
+    res.json({ error: "Internal Server Error" });
+  }
+});
+
+app.post("/checkout/online/cancel", async (req, res) => {
+  const data = req.body;
+
+  try {
+    connection.query(
+      `CALL CheckoutOnlineCancel('${data.session_id}')`,
+      (err, result) => {
+        if (err) {
+          Error("Error fetching data : \n" + err);
+        }
+
+        if (result.affectedRows === 1) {
+          res.json({ updated: true });
+        } else {
+          res.json({ updated: false });
+        }
+      }
+    );
+  } catch (error) {
+    console.error(error);
+    res.json({ error: "Internal server error" });
+  }
 });
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
