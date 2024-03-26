@@ -175,6 +175,36 @@ app.post("/signup", async (req, res) => {
   }
 });
 
+app.get("/brands", (req, res) => {
+  try {
+    connection.query("select * From Brands order by ID asc", (err, result) => {
+      if (err) {
+        Error("Error fetching data :\n" + err);
+      }
+      res.json(result);
+    });
+  } catch (error) {
+    console.error(error);
+    res.json({ error: "Internal server error" });
+  }
+});
+app.get("/category", (req, res) => {
+  try {
+    connection.query(
+      "select * From Categories order by ID asc",
+      (err, result) => {
+        if (err) {
+          Error("Error fetching data :\n" + err);
+        }
+        res.json(result);
+      }
+    );
+  } catch (error) {
+    console.error(error);
+    res.json({ error: "Internal server error" });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
 });
