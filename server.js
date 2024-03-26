@@ -9,15 +9,19 @@ const bodyParser = require("body-parser");
 const cookieParser = require("cookie-parser");
 const session = require("express-session");
 const multer = require("multer");
-const upload = multer();
 const bcrypt = require("bcrypt");
+const uuid = require("uuid");
 
+const firebase = require("./Utils/Firebase.js");
+const fileHandler = require("./Utils/fileHandler.js");
 const DBConnect = require("./Utils/DBConnect.js");
+
 const connection = DBConnect.connect();
+firebase.initialize();
+// const firebaseStorage = firebase.getStorageBucket
 //#endregion
 
 //#region middleware
-app.use(upload.none());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 app.use(bodyParser.json());
@@ -44,6 +48,17 @@ app.use(
     },
   })
 );
+
+const storage = multer.diskStorage({
+  destination: (req, file, callback) => {
+    return callback(null, "./temp/images");
+  },
+  filename: (req, file, callback) => {
+    return callback(null, uuid.v4() + "." + file.originalname.split(".")[1]);
+  },
+});
+
+const upload = multer({ storage });
 //#endregion
 
 const PORT = process.env.PORT;
@@ -175,6 +190,95 @@ app.post("/signup", async (req, res) => {
   }
 });
 
+app.get("/brands", (req, res) => {
+  try {
+    connection.query("select * From Brands order by ID asc", (err, result) => {
+      if (err) {
+        Error("Error fetching data :\n" + err);
+      }
+      res.json(result);
+    });
+  } catch (error) {
+    console.error(error);
+    res.json({ error: "Internal server error" });
+  }
+});
+app.get("/category", (req, res) => {
+  try {
+    connection.query(
+      "select * From Categories order by ID asc",
+      (err, result) => {
+        if (err) {
+          Error("Error fetching data :\n" + err);
+        }
+        res.json(result);
+      }
+    );
+  } catch (error) {
+    console.error(error);
+    res.json({ error: "Internal server error" });
+  }
+});
+
+app.post("/admin/product/add", upload.single("image"), async (req, res) => {
+  const data = req.body;
+
+  // #region Data validation
+  for (val of Object.values(req.body)) {
+    if (val === "") {
+      res.json({ error: "Invalid Data Sent", code: 400 });
+      return;
+    }
+  }
+  if (!req.file) {
+    res.json({ error: "Invalid Data Sent", code: 400 });
+    return;
+  }
+  //#endregion
+
+
+  await connection.query(
+    `SELECT COUNT(*) AS Count  From Products WHERE Name = '${data.name}'`,
+    async (err, result) => {
+      console.log(result);
+      if (err) {
+        console.error(err);
+        fileHandler.deleteFile(req.file);
+        res.json({ error: "Error fetching data", code: 400 });
+        return;
+      }
+      if (result[0].Count === 1) {
+        res.json({ error: "Product already exist", code: 400 });
+        fileHandler.deleteFile(req.file);
+        return;
+      }
+      if (result[0].Count === 0) {
+        webpfile = await fileHandler.convert2webp(req.file);
+        console.log(webpfile);
+        const url = firebase.makePublic(await firebase.storageUpload(webpfile));
+        console.log(url);
+        await fileHandler.deleteFile(webpfile);
+
+        await connection.query(
+          `call InsertProduct('${data.name}', '${data.description}', ${data.price}, ${data.discount}, ${data.rating}, '${url}', ${data.stock}, ${data.brand}, ${data.category})`,
+          (err, result) => {
+            if (err) {
+              console.error(err);
+              res.json({ error: "Error fetching data", code: 400 });
+              return;
+            }
+
+            if (result.affectedRows === 1) {
+              res.json({ message: "Data added succesfully", code: 201 });
+            }
+          }
+        );
+      }
+    }
+  );
+
+  // res.send("ok");
+});
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
 });
