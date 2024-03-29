@@ -205,6 +205,26 @@ app.get("/category", (req, res) => {
   }
 });
 
+app.post("/search", (req, res)=>{
+  const data = req.body
+
+  let query = `SELECT * FROM Products WHERE NAME LIKE '%${data.term}%'  AND Rating >= ${data.rating} AND Price <=${data.price} AND STATUS=1`
+  if (data.brands !== ""){
+    query += ` AND Brand IN (${data.brands})`;
+  }
+  if(data.categories !==""){
+    query += ` AND Category IN (${data.categories})`;
+  }
+  
+  connection.query(query, (err, result)=>{
+    if(err){
+      console.error(err)
+    }
+    else{
+      res.json(result)
+    }
+  })
+})
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
 });
