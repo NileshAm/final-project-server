@@ -9,15 +9,22 @@ const bodyParser = require("body-parser");
 const cookieParser = require("cookie-parser");
 const session = require("express-session");
 const multer = require("multer");
-const upload = multer();
 const bcrypt = require("bcrypt");
+const uuid = require("uuid");
+const stripe = require("stripe")(process.env.STRIPE_PRIVATE_KEY);
+const axios = require("axios");
 
 const DBConnect = require("./Utils/DBConnect.js");
+const firebase = require("./Utils/Firebase.js");
+const fileHandler = require("./Utils/fileHandler.js");
+const getServerURL = require("./Utils/ServerInfo.js").getURL;
+
 const connection = DBConnect.connect();
+firebase.initialize();
+
 //#endregion
 
 //#region middleware
-app.use(upload.none());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 app.use(bodyParser.json());
@@ -44,6 +51,18 @@ app.use(
     },
   })
 );
+
+const storage = multer.diskStorage({
+  destination: (req, file, callback) => {
+    return callback(null, "./temp/images");
+  },
+  filename: (req, file, callback) => {
+    return callback(null, uuid.v4() + "." + file.originalname.split(".")[1]);
+  },
+});
+
+const upload = multer({ storage });
+
 //#endregion
 
 const PORT = process.env.PORT;
@@ -70,7 +89,7 @@ app.delete("/admin/product/delete", (req, res) => {
   res.status(200).json({ state: "deleted" });
 });
 
-app.post("/admin/product/statechange", (req, res) => {
+app.post("/admin/product/statechange", upload.none(), (req, res) => {
   const id = req.body.id;
 
   connection.query(
@@ -94,7 +113,7 @@ app.get("/login", (req, res) => {
   }
 });
 
-app.post("/login/:userType", (req, res) => {
+app.post("/login/:userType", upload.none(), (req, res) => {
   const type = req.params.userType;
   const data = req.body;
   try {
@@ -127,13 +146,13 @@ app.post("/login/:userType", (req, res) => {
       }
     );
   } catch (error) {
-    console.log(err);
+    console.error(err);
     res.status(200).json({ error: "Internal Server Error" });
   }
   return;
 });
 
-app.post("/signup", async (req, res) => {
+app.post("/signup", upload.none(), async (req, res) => {
   const data = req.body;
 
   try {
@@ -175,6 +194,131 @@ app.post("/signup", async (req, res) => {
   }
 });
 
+app.post("/cart/edit", upload.none(), (req, res) => {
+  const data = req.body;
+  try {
+    if (data.delete !== "undefined") {
+      connection.query(
+        `DELETE FROM CartData where CartID = ${data.cartID} and ProductID = ${data.productID}`,
+        (err, result) => {
+          if (err) {
+            Error("Error accessing database : \n" + err);
+          }
+          if (result.affectedRows === 1) {
+            res.status(200).json({ updateStatus: true });
+          } else {
+            res.status(200).json({ updateStatus: false });
+          }
+        }
+      );
+    } else {
+      connection.query(
+        `UPDATE CartData SET Quantity = '${data.quantity}' WHERE (CartID = '${data.cartID}') and (ProductID = '${data.productID}');`,
+        (err, result) => {
+          if (err) {
+            Error("Error occured Updating data : \n" + err);
+          }
+
+          if (result.affectedRows === 1) {
+            res.status(200).json({ updateStatus: true });
+          } else {
+            res.status(200).json({ updateStatus: false });
+          }
+        }
+      );
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(200).json({ error: "Internal Server Error" });
+  }
+});
+
+app.get("/cart", (req, res) => {
+  console.log(req.session);
+  let id = null;
+  if (req.session.user) {
+    id = req.session.user.Email;
+  } else {
+    id = req.query.id;
+  }
+  if (!id) {
+    res.status(200).json({ error: "No ID sent" });
+    return;
+  }
+  try {
+    connection.query(`call GetCartPerUser('${id}');`, (err, result) => {
+      if (err) {
+        Error("Error fetching data : \n" + err);
+      }
+      if (req.session.user && result[0].length !== 0) {
+        req.session.user.CartID = result[0][0].CartID;
+      }
+      res.status(200).json(result[0]);
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(200).json({ err: "Internal Server Error" });
+  }
+});
+
+app.post("/checkout/online", upload.none(), (req, res) => {
+  const id = req.session.user.Email;
+  axios.get(getServerURL(`/cart?id=${id}`)).then(async (result) => {
+    try {
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        customer_email: id,
+        mode: "payment",
+        line_items: result.data.map((item) => {
+          return {
+            price_data: {
+              currency: "lkr",
+              product_data: {
+                name: item.Name,
+                images: [item.Image],
+              },
+              tax_behavior: "inclusive",
+              unit_amount: item.Price * (100 - item.Discount),
+            },
+            quantity: item.Quantity,
+          };
+        }),
+        success_url: decodeURIComponent(req.body.successURL),
+        cancel_url: decodeURIComponent(req.body.cancelURL),
+      });
+      req.session.user.CheckoutID = session.id;
+      res.json({ completed: true, url: session.url });
+    } catch (error) {
+      console.error(error);
+      res.json({ completed: false });
+    }
+  });
+});
+
+app.post("/checkout/online/verify", upload.none(), async (req, res) => {
+  const data = req.session.user;
+  if (!data.CheckoutID || !data.CartID) {
+    res.json({ error: "no CheckoutID or CardID" });
+  }
+  try {
+    const session = await stripe.checkout.sessions.retrieve(data.CheckoutID);
+
+    connection.query(
+      `CALL CheckoutOnlineVerify('${data.CartID}', '${session.payment_intent}');`,
+      (err, result) => {
+        console.log(err, result);
+        if (err) {
+          Error("Error fetching from database : \n" + err);
+        } else {
+          req.session.user.CheckoutID = null;
+          req.session.user.CartID = null;
+          if (result.affectedRows === 1) {
+            res.json({ updated: true });
+          } else {
+            res.json({ updated: false });
+          }
+        }
+
 app.get("/brands", (req, res) => {
   try {
     connection.query("select * From Brands order by ID asc", (err, result) => {
@@ -201,8 +345,42 @@ app.get("/category", (req, res) => {
     );
   } catch (error) {
     console.error(error);
-    res.json({ error: "Internal server error" });
+    res.json({ error: "Internal Server Error" });
   }
+});
+
+app.post("/checkout/online/cancel", upload.none(), async (req, res) => {
+  const data = req.session.user;
+  if (data) {
+    data.CartID = null;
+    data.CheckoutID = null;
+  }
+  console.log(data);
+});
+
+app.post("/checkout/bank", upload.single("image"), async (req, res) => {
+  const data = req.session.user;
+  const file = await fileHandler.convert2webp(req.file);
+  const url = firebase.makePublic(await firebase.storageUpload(file, false));
+
+  fileHandler.deleteFile(file);
+
+  connection.query(
+    `CALL CheckoutBankVerify(${data.CartID}, '${url}')`,
+    (err, result) => {
+      if (err) {
+        console.error(err);
+        res.json({ error: "Error entering data to the database" });
+      } else {
+        console.log(decodeURIComponent(req.body.successURL));
+        if (result.affectedRows === 2) {
+          res.json({ message: "Updated Successfully", code: 200 });
+        } else {
+          res.json({ message: "Internal Server error", code: 500 });
+        }
+      }
+    }
+  );
 });
 
 app.post("/search", (req, res)=>{
