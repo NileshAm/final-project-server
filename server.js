@@ -318,6 +318,13 @@ app.post("/checkout/online/verify", upload.none(), async (req, res) => {
             res.json({ updated: false });
           }
         }
+      }
+    );
+  } catch (err) {
+    console.error(err);
+    res.json({ error: "Internal Server Error" });
+  }
+});
 
 app.get("/brands", (req, res) => {
   try {
@@ -383,26 +390,25 @@ app.post("/checkout/bank", upload.single("image"), async (req, res) => {
   );
 });
 
-app.post("/search", (req, res)=>{
-  const data = req.body
+app.post("/search",upload.none() , (req, res) => {
+  const data = req.body;
 
-  let query = `SELECT * FROM Products WHERE NAME LIKE '%${data.term}%'  AND Rating >= ${data.rating} AND Price <=${data.price} AND STATUS=1`
-  if (data.brands !== ""){
+  let query = `SELECT * FROM Products WHERE NAME LIKE '%${data.term}%'  AND Rating >= ${data.rating} AND Price <=${data.price} AND STATUS=1`;
+  if (data.brands !== "") {
     query += ` AND Brand IN (${data.brands})`;
   }
-  if(data.categories !==""){
+  if (data.categories !== "") {
     query += ` AND Category IN (${data.categories})`;
   }
-  
-  connection.query(query, (err, result)=>{
-    if(err){
-      console.error(err)
+
+  connection.query(query, (err, result) => {
+    if (err) {
+      console.error(err);
+    } else {
+      res.json(result);
     }
-    else{
-      res.json(result)
-    }
-  })
-})
+  });
+});
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
 });
