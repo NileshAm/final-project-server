@@ -85,7 +85,7 @@ app.delete("/admin/product/delete", (req, res) => {
   res.status(200).json({ state: "deleted" });
 });
 
-app.post("/admin/product/statechange", (req, res) => {
+app.post("/admin/product/statechange", upload.none(), (req, res) => {
   const id = req.body.id;
 
   connection.query(
@@ -109,7 +109,7 @@ app.get("/login", (req, res) => {
   }
 });
 
-app.post("/login/:userType", (req, res) => {
+app.post("/login/:userType", upload.none(), (req, res) => {
   const type = req.params.userType;
   const data = req.body;
   try {
@@ -148,7 +148,7 @@ app.post("/login/:userType", (req, res) => {
   return;
 });
 
-app.post("/signup", async (req, res) => {
+app.post("/signup", upload.none(), async (req, res) => {
   const data = req.body;
 
   try {
@@ -255,7 +255,7 @@ app.post("/admin/product/add", upload.single("image"), async (req, res) => {
       if (result[0].Count === 0) {
         webpfile = await fileHandler.convert2webp(req.file);
         console.log(webpfile);
-        const url = firebase.makePublic(await firebase.storageUpload(webpfile));
+        const url = firebase.makePublic(await firebase.storageUpload(webpfile, true));
         console.log(url);
         await fileHandler.deleteFile(webpfile);
 

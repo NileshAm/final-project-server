@@ -30,9 +30,12 @@ const initialize = () => {
   }
 };
 
-const storageUpload = async (file) => {
-
-  const destination = "NIBM-Final/Product-Images/" + file.filename;
+const storageUpload = async (file, isProduct) => {
+  let folder = "NIBM-Final/Product-Images/";
+  if (!isProduct) {
+    folder = "NIBM-Final/Payment-Receipt/";
+  }
+  const destination = folder + file.filename;
   try {
     await bucket.upload(file.path, {
       destination: destination,
