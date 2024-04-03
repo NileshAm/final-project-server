@@ -134,6 +134,7 @@ app.post("/login/:userType", upload.none(), (req, res) => {
                 Name: DBresult[0].Name,
               };
               if (type === "admin" && data.email === "admin@admin.com") {
+                req.session.user["isAdmin"] = true;
                 res.status(200).json({ Access: true, redirect: "/admin" });
               } else {
                 res.status(200).json({ Access: true });
@@ -390,7 +391,7 @@ app.post("/checkout/bank", upload.single("image"), async (req, res) => {
   );
 });
 
-app.post("/search",upload.none() , (req, res) => {
+app.post("/search", upload.none(), (req, res) => {
   const data = req.body;
 
   let query = `SELECT * FROM Products WHERE NAME LIKE '%${data.term}%'  AND Rating >= ${data.rating} AND Price <=${data.price} AND STATUS=1`;
