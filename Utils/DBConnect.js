@@ -8,7 +8,7 @@ const connect = () => {
   if (connection === null) {
     connection = mysql.createConnection({
       host: env.HOST,
-      user: env.USER,
+      user: env.USERNAME,
       password: env.PASSWORD,
       database: env.DATABASE,
     });
