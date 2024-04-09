@@ -394,7 +394,10 @@ app.post("/checkout/bank", upload.single("image"), async (req, res) => {
 app.post("/search", upload.none(), (req, res) => {
   const data = req.body;
 
-  let query = `SELECT * FROM Products WHERE NAME LIKE '%${data.term}%'  AND Rating >= ${data.rating} AND Price <=${data.price} AND STATUS=1`;
+  let query = `SELECT * FROM Products WHERE NAME LIKE '%${data.term}%' AND Rating >= ${data.rating} AND Price <=${data.price}`;
+  if (!data.isAdmin){
+    query +=  " AND STATUS=1"
+  }
   if (data.brands !== "") {
     query += ` AND Brand IN (${data.brands})`;
   }
