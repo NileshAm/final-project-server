@@ -14,14 +14,16 @@ const uuid = require("uuid");
 const stripe = require("stripe")(process.env.STRIPE_PRIVATE_KEY);
 const axios = require("axios");
 
+const firebase = require("./Utils/Firebase.js");
+const fileHandler = require("./Utils/fileHandler.js");
 const DBConnect = require("./Utils/DBConnect.js");
+
 const firebase = require("./Utils/Firebase.js");
 const fileHandler = require("./Utils/fileHandler.js");
 const getServerURL = require("./Utils/ServerInfo.js").getURL;
 
 const connection = DBConnect.connect();
 firebase.initialize();
-
 //#endregion
 
 //#region middleware
@@ -62,7 +64,6 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
-
 //#endregion
 
 const PORT = process.env.PORT;
@@ -194,6 +195,7 @@ app.post("/signup", upload.none(), async (req, res) => {
     res.status(200).json({ error: "Internal server error" });
   }
 });
+
 
 app.post("/cart/edit", upload.none(), (req, res) => {
   const data = req.body;
@@ -353,7 +355,66 @@ app.get("/category", (req, res) => {
     );
   } catch (error) {
     console.error(error);
-    res.json({ error: "Internal Server Error" });
+    res.json({ error: "Internal server error" });
+  }
+});
+
+app.post("/admin/product/add", upload.single("image"), async (req, res) => {
+  const data = req.body;
+
+  // #region Data validation
+  for (val of Object.values(req.body)) {
+    if (val === "") {
+      res.json({ error: "Invalid Data Sent", code: 400 });
+      return;
+    }
+  }
+  if (!req.file) {
+    res.json({ error: "Invalid Data Sent", code: 400 });
+    return;
+  }
+  //#endregion
+
+
+  await connection.query(
+    `SELECT COUNT(*) AS Count  From Products WHERE Name = '${data.name}'`,
+    async (err, result) => {
+      console.log(result);
+      if (err) {
+        console.error(err);
+        fileHandler.deleteFile(req.file);
+        res.json({ error: "Error fetching data", code: 400 });
+        return;
+      }
+      if (result[0].Count === 1) {
+        res.json({ error: "Product already exist", code: 400 });
+        fileHandler.deleteFile(req.file);
+        return;
+      }
+      if (result[0].Count === 0) {
+        webpfile = await fileHandler.convert2webp(req.file);
+        console.log(webpfile);
+        const url = firebase.makePublic(await firebase.storageUpload(webpfile, true));
+        console.log(url);
+        await fileHandler.deleteFile(webpfile);
+
+        await connection.query(
+          `call InsertProduct('${data.name}', '${data.description}', ${data.price}, ${data.discount}, ${data.rating}, '${url}', ${data.stock}, ${data.brand}, ${data.category})`,
+          (err, result) => {
+            if (err) {
+              console.error(err);
+              res.json({ error: "Error fetching data", code: 400 });
+              return;
+            }
+
+            if (result.affectedRows === 1) {
+              res.json({ message: "Data added succesfully", code: 201 });
+            }
+          }
+        );
+      }
+    }
+  );
   }
 });
 

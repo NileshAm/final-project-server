@@ -32,7 +32,7 @@ const initialize = () => {
 
 const storageUpload = async (file, isProduct) => {
   let folder = "NIBM-Final/Product-Images/";
-  if(!isProduct){
+  if (!isProduct) {
     folder = "NIBM-Final/Payment-Receipt/";
   }
   const destination = folder + file.filename;
