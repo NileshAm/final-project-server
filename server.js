@@ -14,8 +14,6 @@ const uuid = require("uuid");
 const stripe = require("stripe")(process.env.STRIPE_PRIVATE_KEY);
 const axios = require("axios");
 
-const firebase = require("./Utils/Firebase.js");
-const fileHandler = require("./Utils/fileHandler.js");
 const DBConnect = require("./Utils/DBConnect.js");
 
 const firebase = require("./Utils/Firebase.js");
@@ -399,7 +397,7 @@ app.post("/admin/product/add", upload.single("image"), async (req, res) => {
         await fileHandler.deleteFile(webpfile);
 
         await connection.query(
-          `call InsertProduct('${data.name}', '${data.description}', ${data.price}, ${data.discount}, ${data.rating}, '${url}', ${data.stock}, ${data.brand}, ${data.category})`,
+          `call InsertProduct('${data.name}', '${data.description}', ${data.price}, ${data.discount}, '${url}', ${data.stock}, ${data.brand}, ${data.category})`,
           (err, result) => {
             if (err) {
               console.error(err);
@@ -416,7 +414,7 @@ app.post("/admin/product/add", upload.single("image"), async (req, res) => {
     }
   );
   }
-});
+);
 
 app.post("/checkout/online/cancel", upload.none(), async (req, res) => {
   const data = req.session.user;
