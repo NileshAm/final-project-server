@@ -194,7 +194,6 @@ app.post("/signup", upload.none(), async (req, res) => {
   }
 });
 
-
 app.post("/cart/edit", upload.none(), (req, res) => {
   const data = req.body;
   try {
@@ -373,7 +372,6 @@ app.post("/admin/product/add", upload.single("image"), async (req, res) => {
   }
   //#endregion
 
-
   await connection.query(
     `SELECT COUNT(*) AS Count  From Products WHERE Name = '${data.name}'`,
     async (err, result) => {
@@ -392,7 +390,9 @@ app.post("/admin/product/add", upload.single("image"), async (req, res) => {
       if (result[0].Count === 0) {
         webpfile = await fileHandler.convert2webp(req.file);
         console.log(webpfile);
-        const url = firebase.makePublic(await firebase.storageUpload(webpfile, true));
+        const url = firebase.makePublic(
+          await firebase.storageUpload(webpfile, true)
+        );
         console.log(url);
         await fileHandler.deleteFile(webpfile);
 
@@ -413,8 +413,46 @@ app.post("/admin/product/add", upload.single("image"), async (req, res) => {
       }
     }
   );
+});
+
+app.get("/admin/product/details", upload.none(), (req, res) => {
+  connection.query(
+    `SELECT * FROM Products WHERE ID = ${req.query.id}`,
+    (err, result) => {
+      if (err) {
+        console.error(err);
+        res.json({ error: "Internal Server Error", code: 500 });
+      } else {
+        res.json(result[0]);
+      }
+    }
+  );
+});
+
+app.post("/admin/product/update", upload.single("image"), async (req, res) => {
+  let url = null;
+  if (req.file !== undefined) {
+    const webpFile = await fileHandler.convert2webp(req.file);
+    url = firebase.makePublic(await firebase.storageUpload(webpFile, true));
+    await fileHandler.deleteFile(webpFile);
+    
+  } else {
+    url = req.body.image;
   }
-);
+
+  const data = req.body;
+  connection.query(
+    `Call UpdateItem(${data.id}, '${data.description}', ${data.price}, ${data.discount}, '${url}', ${data.stock})`,
+    (err, result) => {
+      if (err) {
+        console.error(err);
+        res.json({ error: "Inyernal Server Error", code: 500 });
+      } else {
+        res.json({ message: "Product Updated Successfully", code: 200 });
+      }
+    }
+  );
+});
 
 app.post("/checkout/online/cancel", upload.none(), async (req, res) => {
   const data = req.session.user;
@@ -454,8 +492,8 @@ app.post("/search", upload.none(), (req, res) => {
   const data = req.body;
 
   let query = `SELECT * FROM Products WHERE NAME LIKE '%${data.term}%' AND Rating >= ${data.rating} AND Price <=${data.price}`;
-  if (!data.isAdmin){
-    query +=  " AND STATUS=1"
+  if (!data.isAdmin) {
+    query += " AND STATUS=1";
   }
   if (data.brands !== "") {
     query += ` AND Brand IN (${data.brands})`;
@@ -463,7 +501,9 @@ app.post("/search", upload.none(), (req, res) => {
   if (data.categories !== "") {
     query += ` AND Category IN (${data.categories})`;
   }
-
+  if (data.status !== "") {
+    query += ` AND Status = ${data.status}`;
+  }
   connection.query(query, (err, result) => {
     if (err) {
       console.error(err);
@@ -472,6 +512,7 @@ app.post("/search", upload.none(), (req, res) => {
     }
   });
 });
+
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
 });

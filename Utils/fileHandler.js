@@ -9,7 +9,6 @@ const convert2webp = async (file) => {
     wfile.mimetype = "image/webp"
     wfile.filename = file.filename.split(".")[0]+".webp"
     wfile.path = webpPath
-    console.log(file.path)
     return wfile
 }
 
