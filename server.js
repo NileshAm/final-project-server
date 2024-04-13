@@ -84,8 +84,13 @@ app.get("/home", (req, res) => {
 
 app.delete("/admin/product/delete", (req, res) => {
   const id = req.query.id;
-  // TODO : implement removing from the database
-  res.status(200).json({ state: "deleted" });
+  connection.query(`DELETE FROM Products WHERE ID = ${id}`, (err, result) => {
+    if (err) {
+      req.json({ error: "Internal Server Error", code: 500 });
+    } else {
+      res.status(200).json({ state: "deleted", code: 200 });
+    }
+  });
 });
 
 app.post("/admin/product/statechange", upload.none(), (req, res) => {
@@ -194,6 +199,11 @@ app.post("/signup", upload.none(), async (req, res) => {
   }
 });
 
+app.get("/logout", upload.none(), (req, res) => {
+  req.session.user = null;
+  res.json({ logout: "success", code: 200 });
+});
+
 app.post("/cart/edit", upload.none(), (req, res) => {
   const data = req.body;
   try {
@@ -234,7 +244,6 @@ app.post("/cart/edit", upload.none(), (req, res) => {
 });
 
 app.get("/cart", (req, res) => {
-  console.log(req.session);
   let id = null;
   if (req.session.user) {
     id = req.session.user.Email;
@@ -306,7 +315,6 @@ app.post("/checkout/online/verify", upload.none(), async (req, res) => {
     connection.query(
       `CALL CheckoutOnlineVerify('${data.CartID}', '${session.payment_intent}');`,
       (err, result) => {
-        console.log(err, result);
         if (err) {
           Error("Error fetching from database : \n" + err);
         } else {
@@ -375,7 +383,6 @@ app.post("/admin/product/add", upload.single("image"), async (req, res) => {
   await connection.query(
     `SELECT COUNT(*) AS Count  From Products WHERE Name = '${data.name}'`,
     async (err, result) => {
-      console.log(result);
       if (err) {
         console.error(err);
         fileHandler.deleteFile(req.file);
@@ -389,11 +396,9 @@ app.post("/admin/product/add", upload.single("image"), async (req, res) => {
       }
       if (result[0].Count === 0) {
         webpfile = await fileHandler.convert2webp(req.file);
-        console.log(webpfile);
         const url = firebase.makePublic(
           await firebase.storageUpload(webpfile, true)
         );
-        console.log(url);
         await fileHandler.deleteFile(webpfile);
 
         await connection.query(
@@ -435,7 +440,6 @@ app.post("/admin/product/update", upload.single("image"), async (req, res) => {
     const webpFile = await fileHandler.convert2webp(req.file);
     url = firebase.makePublic(await firebase.storageUpload(webpFile, true));
     await fileHandler.deleteFile(webpFile);
-    
   } else {
     url = req.body.image;
   }
@@ -460,7 +464,6 @@ app.post("/checkout/online/cancel", upload.none(), async (req, res) => {
     data.CartID = null;
     data.CheckoutID = null;
   }
-  console.log(data);
 });
 
 app.post("/checkout/bank", upload.single("image"), async (req, res) => {
@@ -477,12 +480,7 @@ app.post("/checkout/bank", upload.single("image"), async (req, res) => {
         console.error(err);
         res.json({ error: "Error entering data to the database" });
       } else {
-        console.log(decodeURIComponent(req.body.successURL));
-        if (result.affectedRows === 2) {
-          res.json({ message: "Updated Successfully", code: 200 });
-        } else {
-          res.json({ message: "Internal Server error", code: 500 });
-        }
+        res.json({ message: "Updated Successfully", code: 200 });
       }
     }
   );
@@ -511,6 +509,70 @@ app.post("/search", upload.none(), (req, res) => {
       res.json(result);
     }
   });
+});
+
+app.get("/admin/approvals/:type", upload.none(), (req, res) => {
+  connection.query("CALL GetPendingApprovals()", (err, result1) => {
+    if (err) {
+      res.json({ error: "Interval Server Error" });
+    } else {
+      if (req.params.type === "count") {
+        res.json({ length: result1[0].length });
+      } else {
+        connection.query("CALL GetApprovalItems()", (err, result2) => {
+          if (err) {
+            res.json({ error: "Interval Server Error" });
+          } else {
+            result1 = result1[0];
+            result2 = result2[0];
+            let pendingApprovals = {};
+
+            result1.forEach((result) => {
+              result.Items = [];
+              pendingApprovals[result.CartID] = result;
+            });
+
+            result2.forEach((result) => {
+              pendingApprovals[result.CartID].Items.push(result);
+            });
+            let finalResult = Object.values(pendingApprovals);
+
+            finalResult.forEach((element) => {
+              let total = 0;
+              let discount = 0;
+              element.Items.forEach((item) => {
+                total += item.Price * item.Quantity;
+                discount +=
+                  ((item.Price * item.Discount) / 100) * item.Quantity;
+              });
+              element.TotalPrice = total - discount;
+              element.Discount = discount;
+
+              let date = element.PayDate.toLocaleDateString("zh-Hans-CN");
+              let time = element.PayDate.toTimeString().split(" ")[0];
+
+              element.PayDate = date + "T" + time;
+            });
+            res.json(finalResult);
+          }
+        });
+      }
+    }
+  });
+});
+
+app.post("/admin/approvals/:state", upload.none(), (req, res) => {
+  connection.query(
+    `CALL ApproveItem('${req.params.state}', '${req.body.CartID}')`,
+    (err, result) => {
+      if (err) {
+        console.error(err);
+        res.json({ error: "Internal Server Error", code: 500 });
+      } else {
+        res.json({ message: "Executed successfully", code: 200 });
+      }
+    }
+  );
 });
 
 app.listen(PORT, () => {
