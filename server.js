@@ -62,6 +62,14 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
+
+app.use((req, res, next) => {
+  if (connection.state === "disconnected") {
+    res.json({ message: "no connecttion" });
+    return;
+  }
+  next();
+});
 //#endregion
 
 const PORT = process.env.PORT;
@@ -564,6 +572,70 @@ app.get("/admin/approvals/:type", upload.none(), (req, res) => {
 app.post("/admin/approvals/:state", upload.none(), (req, res) => {
   connection.query(
     `CALL ApproveItem('${req.params.state}', '${req.body.CartID}')`,
+    (err, result) => {
+      if (err) {
+        console.error(err);
+        res.json({ error: "Internal Server Error", code: 500 });
+      } else {
+        res.json({ message: "Executed successfully", code: 200 });
+      }
+    }
+  );
+});
+
+app.get("/admin/pickup/:type", upload.none(), (req, res) => {
+  connection.query("CALL GetPendingPickup()", (err, result1) => {
+    if (err) {
+      res.json({ error: "Interval Server Error" });
+    } else {
+      if (req.params.type === "count") {
+        res.json({ length: result1[0].length });
+      } else {
+        connection.query("CALL GetPickUpItems()", (err, result2) => {
+          if (err) {
+            res.json({ error: "Interval Server Error" });
+          } else {
+            result1 = result1[0];
+            result2 = result2[0];
+            let pendingApprovals = {};
+
+            result1.forEach((result) => {
+              result.Items = [];
+              pendingApprovals[result.CartID] = result;
+            });
+
+            result2.forEach((result) => {
+              pendingApprovals[result.CartID].Items.push(result);
+            });
+            let finalResult = Object.values(pendingApprovals);
+
+            finalResult.forEach((element) => {
+              let total = 0;
+              let discount = 0;
+              element.Items.forEach((item) => {
+                total += item.Price * item.Quantity;
+                discount +=
+                  ((item.Price * item.Discount) / 100) * item.Quantity;
+              });
+              element.TotalPrice = total - discount;
+              element.Discount = discount;
+
+              let date = element.PayDate.toLocaleDateString("zh-Hans-CN");
+              let time = element.PayDate.toTimeString().split(" ")[0];
+
+              element.PayDate = date + "T" + time;
+            });
+            res.json(finalResult);
+          }
+        });
+      }
+    }
+  });
+});
+
+app.post("/admin/pickup", upload.none(), (req, res) => {
+  connection.query(
+    `CALL SetPickUp('${req.body.CartID}')`,
     (err, result) => {
       if (err) {
         console.error(err);
