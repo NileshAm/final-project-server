@@ -15,13 +15,13 @@ const stripe = require("stripe")(process.env.STRIPE_PRIVATE_KEY);
 const axios = require("axios");
 
 const DBConnect = require("./Utils/DBConnect.js");
+
 const firebase = require("./Utils/Firebase.js");
 const fileHandler = require("./Utils/fileHandler.js");
 const getServerURL = require("./Utils/ServerInfo.js").getURL;
 
 const connection = DBConnect.connect();
 firebase.initialize();
-
 //#endregion
 
 //#region middleware
@@ -63,6 +63,13 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
+app.use((req, res, next) => {
+  if (connection.state === "disconnected") {
+    res.json({ message: "no connecttion" });
+    return;
+  }
+  next();
+});
 //#endregion
 
 const PORT = process.env.PORT;
@@ -85,8 +92,13 @@ app.get("/home", (req, res) => {
 
 app.delete("/admin/product/delete", (req, res) => {
   const id = req.query.id;
-  // TODO : implement removing from the database
-  res.status(200).json({ state: "deleted" });
+  connection.query(`DELETE FROM Products WHERE ID = ${id}`, (err, result) => {
+    if (err) {
+      req.json({ error: "Internal Server Error", code: 500 });
+    } else {
+      res.status(200).json({ state: "deleted", code: 200 });
+    }
+  });
 });
 
 app.post("/admin/product/statechange", upload.none(), (req, res) => {
@@ -195,6 +207,11 @@ app.post("/signup", upload.none(), async (req, res) => {
   }
 });
 
+app.get("/logout", upload.none(), (req, res) => {
+  req.session.user = null;
+  res.json({ logout: "success", code: 200 });
+});
+
 app.post("/cart/edit", upload.none(), (req, res) => {
   const data = req.body;
   try {
@@ -235,7 +252,6 @@ app.post("/cart/edit", upload.none(), (req, res) => {
 });
 
 app.get("/cart", (req, res) => {
-  console.log(req.session);
   let id = null;
   if (req.session.user) {
     id = req.session.user.Email;
@@ -307,7 +323,6 @@ app.post("/checkout/online/verify", upload.none(), async (req, res) => {
     connection.query(
       `CALL CheckoutOnlineVerify('${data.CartID}', '${session.payment_intent}');`,
       (err, result) => {
-        console.log(err, result);
         if (err) {
           Error("Error fetching from database : \n" + err);
         } else {
@@ -353,8 +368,102 @@ app.get("/category", (req, res) => {
     );
   } catch (error) {
     console.error(error);
-    res.json({ error: "Internal Server Error" });
+    res.json({ error: "Internal server error" });
   }
+});
+
+app.post("/admin/product/add", upload.single("image"), async (req, res) => {
+  const data = req.body;
+
+  // #region Data validation
+  for (val of Object.values(req.body)) {
+    if (val === "") {
+      res.json({ error: "Invalid Data Sent", code: 400 });
+      return;
+    }
+  }
+  if (!req.file) {
+    res.json({ error: "Invalid Data Sent", code: 400 });
+    return;
+  }
+  //#endregion
+
+  await connection.query(
+    `SELECT COUNT(*) AS Count  From Products WHERE Name = '${data.name}'`,
+    async (err, result) => {
+      if (err) {
+        console.error(err);
+        fileHandler.deleteFile(req.file);
+        res.json({ error: "Error fetching data", code: 400 });
+        return;
+      }
+      if (result[0].Count === 1) {
+        res.json({ error: "Product already exist", code: 400 });
+        fileHandler.deleteFile(req.file);
+        return;
+      }
+      if (result[0].Count === 0) {
+        webpfile = await fileHandler.convert2webp(req.file);
+        const url = firebase.makePublic(
+          await firebase.storageUpload(webpfile, true)
+        );
+        await fileHandler.deleteFile(webpfile);
+
+        await connection.query(
+          `call InsertProduct('${data.name}', '${data.description}', ${data.price}, ${data.discount}, '${url}', ${data.stock}, ${data.brand}, ${data.category})`,
+          (err, result) => {
+            if (err) {
+              console.error(err);
+              res.json({ error: "Error fetching data", code: 400 });
+              return;
+            }
+
+            if (result.affectedRows === 1) {
+              res.json({ message: "Data added succesfully", code: 201 });
+            }
+          }
+        );
+      }
+    }
+  );
+});
+
+app.get("/admin/product/details", upload.none(), (req, res) => {
+  connection.query(
+    `SELECT * FROM Products WHERE ID = ${req.query.id}`,
+    (err, result) => {
+      if (err) {
+        console.error(err);
+        res.json({ error: "Internal Server Error", code: 500 });
+      } else {
+        res.json(result[0]);
+      }
+    }
+  );
+});
+
+app.post("/admin/product/update", upload.single("image"), async (req, res) => {
+  let url = null;
+  if (req.file !== undefined) {
+    const webpFile = await fileHandler.convert2webp(req.file);
+    url = firebase.makePublic(await firebase.storageUpload(webpFile, true));
+    await fileHandler.deleteFile(webpFile);
+  } else {
+    url = req.body.image;
+  }
+
+  const data = req.body;
+  connection.query(
+    `Call UpdateItem(${data.id}, '${data.description}', ${data.price}, ${data.discount}, '${url}', ${data.stock})`,
+    (err, result) => {
+      if (err) {
+        console.error(err);
+        res.json({ error: "Inyernal Server Error", code: 500 });
+      } else {
+        res.json({ message: "Product Updated Successfully", code: 200 });
+      }
+    }
+  );
 });
 
 app.post("/checkout/online/cancel", upload.none(), async (req, res) => {
@@ -363,7 +472,6 @@ app.post("/checkout/online/cancel", upload.none(), async (req, res) => {
     data.CartID = null;
     data.CheckoutID = null;
   }
-  console.log(data);
 });
 
 app.post("/checkout/bank", upload.single("image"), async (req, res) => {
@@ -380,12 +488,7 @@ app.post("/checkout/bank", upload.single("image"), async (req, res) => {
         console.error(err);
         res.json({ error: "Error entering data to the database" });
       } else {
-        console.log(decodeURIComponent(req.body.successURL));
-        if (result.affectedRows === 2) {
-          res.json({ message: "Updated Successfully", code: 200 });
-        } else {
-          res.json({ message: "Internal Server error", code: 500 });
-        }
+        res.json({ message: "Updated Successfully", code: 200 });
       }
     }
   );
@@ -394,14 +497,19 @@ app.post("/checkout/bank", upload.single("image"), async (req, res) => {
 app.post("/search", upload.none(), (req, res) => {
   const data = req.body;
 
-  let query = `SELECT * FROM Products WHERE NAME LIKE '%${data.term}%'  AND Rating >= ${data.rating} AND Price <=${data.price} AND STATUS=1`;
+  let query = `SELECT * FROM Products WHERE NAME LIKE '%${data.term}%' AND Rating >= ${data.rating} AND Price <=${data.price}`;
+  if (!data.isAdmin) {
+    query += " AND STATUS=1";
+  }
   if (data.brands !== "") {
     query += ` AND Brand IN (${data.brands})`;
   }
   if (data.categories !== "") {
     query += ` AND Category IN (${data.categories})`;
   }
-
+  if (data.status !== "") {
+    query += ` AND Status = ${data.status}`;
+  }
   connection.query(query, (err, result) => {
     if (err) {
       console.error(err);
@@ -410,6 +518,135 @@ app.post("/search", upload.none(), (req, res) => {
     }
   });
 });
+
+app.get("/admin/approvals/:type", upload.none(), (req, res) => {
+  connection.query("CALL GetPendingApprovals()", (err, result1) => {
+    if (err) {
+      res.json({ error: "Interval Server Error" });
+    } else {
+      if (req.params.type === "count") {
+        res.json({ length: result1[0].length });
+      } else {
+        connection.query("CALL GetApprovalItems()", (err, result2) => {
+          if (err) {
+            res.json({ error: "Interval Server Error" });
+          } else {
+            result1 = result1[0];
+            result2 = result2[0];
+            let pendingApprovals = {};
+
+            result1.forEach((result) => {
+              result.Items = [];
+              pendingApprovals[result.CartID] = result;
+            });
+
+            result2.forEach((result) => {
+              pendingApprovals[result.CartID].Items.push(result);
+            });
+            let finalResult = Object.values(pendingApprovals);
+
+            finalResult.forEach((element) => {
+              let total = 0;
+              let discount = 0;
+              element.Items.forEach((item) => {
+                total += item.Price * item.Quantity;
+                discount +=
+                  ((item.Price * item.Discount) / 100) * item.Quantity;
+              });
+              element.TotalPrice = total - discount;
+              element.Discount = discount;
+
+              let date = element.PayDate.toLocaleDateString("zh-Hans-CN");
+              let time = element.PayDate.toTimeString().split(" ")[0];
+
+              element.PayDate = date + "T" + time;
+            });
+            res.json(finalResult);
+          }
+        });
+      }
+    }
+  });
+});
+
+app.post("/admin/approvals/:state", upload.none(), (req, res) => {
+  connection.query(
+    `CALL ApproveItem('${req.params.state}', '${req.body.CartID}')`,
+    (err, result) => {
+      if (err) {
+        console.error(err);
+        res.json({ error: "Internal Server Error", code: 500 });
+      } else {
+        res.json({ message: "Executed successfully", code: 200 });
+      }
+    }
+  );
+});
+
+app.get("/admin/pickup/:type", upload.none(), (req, res) => {
+  connection.query("CALL GetPendingPickup()", (err, result1) => {
+    if (err) {
+      res.json({ error: "Interval Server Error" });
+    } else {
+      if (req.params.type === "count") {
+        res.json({ length: result1[0].length });
+      } else {
+        connection.query("CALL GetPickUpItems()", (err, result2) => {
+          if (err) {
+            res.json({ error: "Interval Server Error" });
+          } else {
+            result1 = result1[0];
+            result2 = result2[0];
+            let pendingApprovals = {};
+
+            result1.forEach((result) => {
+              result.Items = [];
+              pendingApprovals[result.CartID] = result;
+            });
+
+            result2.forEach((result) => {
+              pendingApprovals[result.CartID].Items.push(result);
+            });
+            let finalResult = Object.values(pendingApprovals);
+
+            finalResult.forEach((element) => {
+              let total = 0;
+              let discount = 0;
+              element.Items.forEach((item) => {
+                total += item.Price * item.Quantity;
+                discount +=
+                  ((item.Price * item.Discount) / 100) * item.Quantity;
+              });
+              element.TotalPrice = total - discount;
+              element.Discount = discount;
+
+              let date = element.PayDate.toLocaleDateString("zh-Hans-CN");
+              let time = element.PayDate.toTimeString().split(" ")[0];
+
+              element.PayDate = date + "T" + time;
+            });
+            res.json(finalResult);
+          }
+        });
+      }
+    }
+  });
+});
+
+app.post("/admin/pickup", upload.none(), (req, res) => {
+  connection.query(
+    `CALL SetPickUp('${req.body.CartID}')`,
+    (err, result) => {
+      if (err) {
+        console.error(err);
+        res.json({ error: "Internal Server Error", code: 500 });
+      } else {
+        res.json({ message: "Executed successfully", code: 200 });
+      }
+    }
+  );
+});
+
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
 });
