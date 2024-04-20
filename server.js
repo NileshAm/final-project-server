@@ -155,6 +155,8 @@ app.post("/login/:userType", upload.none(), (req, res) => {
               res.status(200).json({ Access: false });
             }
           });
+        } else {
+          res.status(200).json({ Access: false });
         }
       }
     );
@@ -634,17 +636,14 @@ app.get("/admin/pickup/:type", upload.none(), (req, res) => {
 });
 
 app.post("/admin/pickup", upload.none(), (req, res) => {
-  connection.query(
-    `CALL SetPickUp('${req.body.CartID}')`,
-    (err, result) => {
-      if (err) {
-        console.error(err);
-        res.json({ error: "Internal Server Error", code: 500 });
-      } else {
-        res.json({ message: "Executed successfully", code: 200 });
-      }
+  connection.query(`CALL SetPickUp('${req.body.CartID}')`, (err, result) => {
+    if (err) {
+      console.error(err);
+      res.json({ error: "Internal Server Error", code: 500 });
+    } else {
+      res.json({ message: "Executed successfully", code: 200 });
     }
-  );
+  });
 });
 
 app.listen(PORT, () => {
