@@ -509,7 +509,7 @@ app.post("/search", upload.none(), (req, res) => {
   if (data.categories !== "") {
     query += ` AND Category IN (${data.categories})`;
   }
-  if (data.status !== "") {
+  if (data.status !== "" && data.isAdmin) {
     query += ` AND Status = ${data.status}`;
   }
   connection.query(query, (err, result) => {
