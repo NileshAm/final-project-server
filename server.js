@@ -79,15 +79,27 @@ app.get("/test", (req, res) => {
   res.json({ Result: "Working" });
 });
 
-app.get("/home", (req, res) => {
-  connection.query("SELECT * FROM Products WHERE Status=1", (err, result) => {
-    if (err) {
-      console.error(`Error fetching data : \n${err}`);
-      res.status(500).json({ error: "Failed to execute Query" });
-    } else {
-      res.status(200).json(result);
-    }
-  });
+app.get("/home", async (req, res) => {
+  try {
+    const result1 = await DBConnect.queryPromise(
+      "SELECT * FROM Products WHERE `Status`=1 ORDER BY RAND() LIMIT 10 "
+    );
+    const result2 = await DBConnect.queryPromise(
+      "SELECT * FROM Products WHERE `Status`=1 AND Category = 1 ORDER BY RAND() LIMIT 10 "
+    );
+    const result3 = await DBConnect.queryPromise(
+      "SELECT * FROM Products WHERE `Status`=1 AND Category = 2 ORDER BY RAND() LIMIT 10 "
+    );
+
+    let finalResult = [];
+    finalResult.push(result1);
+    finalResult.push(result2);
+    finalResult.push(result3);
+    res.status(200).json(finalResult);
+  } catch (error) {
+    console.error("Error : \n" + error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
 app.delete("/admin/product/delete", (req, res) => {

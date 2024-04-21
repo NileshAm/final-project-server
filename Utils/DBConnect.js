@@ -25,4 +25,15 @@ const connect = () => {
   return connection;
 };
 
-module.exports = { connect };
+const queryPromise = (queryString) => {
+  return new Promise((resolve, reject) => {
+    connection.query(queryString, (err, result) => {
+      if (err) {
+        reject(err);
+      }
+      resolve(result);
+    });
+  });
+};
+
+module.exports = { connect, queryPromise };
