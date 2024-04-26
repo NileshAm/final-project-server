@@ -369,6 +369,7 @@ app.get("/brands", (req, res) => {
     res.json({ error: "Internal server error" });
   }
 });
+
 app.get("/category", (req, res) => {
   try {
     connection.query(
@@ -657,6 +658,31 @@ app.post("/admin/pickup", upload.none(), (req, res) => {
     }
   });
 });
+
+app.get("/product", upload.none(), (req, res) => {
+  const id = req.query.id;
+
+  connection.query(`SELECT * FROM Products WHERE ID=${id}`, (err, result)=>{
+    if(err){
+      console.error("Error Fetching data : \n"+err)
+      res.json({error:"Error Fetching data", code:"500"})
+    }else{
+      res.json(result)
+    }
+  });
+});
+
+app.get("/product/similar", upload.none(), (req, res)=>{
+  const id = req.query.id
+  connection.query(`CALL GetSimilarItems(${id})`, (err, result)=>{
+    if (err) {
+      console.error("Error Fetching data : \n" + err);
+      res.json({ error: "Error Fetching data", code: "500" });
+    } else {
+      res.json(result);
+    }
+  })
+})
 
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
