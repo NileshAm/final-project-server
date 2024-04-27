@@ -662,27 +662,46 @@ app.post("/admin/pickup", upload.none(), (req, res) => {
 app.get("/product", upload.none(), (req, res) => {
   const id = req.query.id;
 
-  connection.query(`SELECT * FROM Products WHERE ID=${id}`, (err, result)=>{
-    if(err){
-      console.error("Error Fetching data : \n"+err)
-      res.json({error:"Error Fetching data", code:"500"})
-    }else{
-      res.json(result)
-    }
-  });
-});
-
-app.get("/product/similar", upload.none(), (req, res)=>{
-  const id = req.query.id
-  connection.query(`CALL GetSimilarItems(${id})`, (err, result)=>{
+  connection.query(`SELECT * FROM Products WHERE ID=${id}`, (err, result) => {
     if (err) {
       console.error("Error Fetching data : \n" + err);
       res.json({ error: "Error Fetching data", code: "500" });
     } else {
       res.json(result);
     }
-  })
-})
+  });
+});
+
+app.get("/product/similar", upload.none(), (req, res) => {
+  const id = req.query.id;
+  connection.query(`CALL GetSimilarItems(${id})`, (err, result) => {
+    if (err) {
+      console.error("Error Fetching data : \n" + err);
+      res.json({ error: "Error Fetching data", code: "500" });
+    } else {
+      res.json(result);
+    }
+  });
+});
+
+app.post("/cart/add", upload.none(), (req, res) => {
+  const data = req.body;
+  if (req.session.user) {
+    connection.query(
+      `CALL AddToCart(${data.productID}, ${req.session.user}, ${data.quantity})`,
+      (err, result) => {
+        if (err) {
+          console.error("Error Fetching data : \n" + err);
+          res.json({ error: "Error fetching data", code: 500 });
+        } else {
+          res.json({ message: "Item add to the Cart successfully", code: 200 });
+        }
+      }
+    );
+  } else {
+    res.json({ message: "Not logged In", code: 403 });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
