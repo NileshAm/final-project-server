@@ -82,13 +82,13 @@ app.get("/test", (req, res) => {
 app.get("/home", async (req, res) => {
   try {
     const result1 = await DBConnect.queryPromise(
-      "SELECT * FROM Products WHERE `Status`=1 ORDER BY RAND() LIMIT 10 "
+      "SELECT * FROM Products WHERE `Status`=1 AND Stock > 0 ORDER BY RAND() LIMIT 10 "
     );
     const result2 = await DBConnect.queryPromise(
-      "SELECT * FROM Products WHERE `Status`=1 AND Category = 1 ORDER BY RAND() LIMIT 10 "
+      "SELECT * FROM Products WHERE `Status`=1 AND Category = 1 AND Stock > 0 ORDER BY RAND() LIMIT 10 "
     );
     const result3 = await DBConnect.queryPromise(
-      "SELECT * FROM Products WHERE `Status`=1 AND Category = 2 ORDER BY RAND() LIMIT 10 "
+      "SELECT * FROM Products WHERE `Status`=1 AND Category = 2 AND Stock > 0 ORDER BY RAND() LIMIT 10 "
     );
 
     let finalResult = [];
@@ -688,7 +688,7 @@ app.post("/cart/add", upload.none(), (req, res) => {
   const data = req.body;
   if (req.session.user) {
     connection.query(
-      `CALL AddToCart(${data.productID}, ${req.session.user}, ${data.quantity})`,
+      `CALL AddToCart(${data.productID}, '${req.session.user.Email}', ${data.quantity})`,
       (err, result) => {
         if (err) {
           console.error("Error Fetching data : \n" + err);
@@ -701,6 +701,22 @@ app.post("/cart/add", upload.none(), (req, res) => {
   } else {
     res.json({ message: "Not logged In", code: 403 });
   }
+});
+
+app.get("/product/reviews", upload.none(), (req, res) => {
+  connection.query(`CALL GetReviews(${req.query.id})`, (err, result) => {
+    if (err) {
+      console.error("Error fetching data : \n" + err);
+      res.json({ error: "Internal Server error", code: 500 });
+    } else {
+      result[0].forEach((element) => {
+        let date = element.Date.toLocaleDateString("zh-Hans-CN");
+        let time = element.Date.toTimeString().split(" ")[0];
+        element.Date = date + "T" + time;
+      });
+      res.json(result);
+    }
+  });
 });
 
 app.listen(PORT, () => {
