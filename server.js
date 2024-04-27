@@ -719,6 +719,47 @@ app.get("/product/reviews", upload.none(), (req, res) => {
   });
 });
 
+app.post("/product/reviews/change/:type", upload.none(), (req, res) => {
+  const data = req.body;
+  if (!req.session.user) {
+    res.json({ error: "Not logged in", code: 403 });
+    return;
+  }
+  let query = null;
+  if (req.params.type === "add") {
+    query = "SetRating";
+  } else if (req.params.type === "update") {
+    query = "UpdateRating";
+  } else {
+    res.json({ error: "Not Found", code: 404 });
+  }
+  connection.query(
+    `CALL ${query}(${data.ID}, '${req.session.user.Email}', ${data.Rating}, '${data.Description}')`,
+    (err, result) => {
+      if (err) {
+        console.error("Error Fetching data : \n" + err);
+        res.json({ error: "Internal Server Error", code: 500 });
+      } else {
+        res.json({ message: "Review Added successfully", code: 200 });
+      }
+    }
+  );
+});
+
+app.get("/product/reviews/user", upload.none(), (req, res) => {
+  connection.query(
+    `CALL GetUserReview(${req.query.id}, '${req.session.user.Email}')`,
+    (err, result) => {
+      if (err) {
+        console.error("Error fetching data : \n" + err);
+        res.json({ error: "Internal server Error", code: 500 });
+      } else {
+        res.json(result[0][0]);
+      }
+    }
+  );
+});
+
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
 });
