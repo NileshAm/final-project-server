@@ -181,7 +181,6 @@ app.post("/login/:userType", upload.none(), (req, res) => {
 
 app.post("/signup", upload.none(), async (req, res) => {
   const data = req.body;
-
   try {
     connection.query(
       `SELECT COUNT(*) AS Users FROM Users WHERE Email='${data.email}'`,
@@ -195,9 +194,9 @@ app.post("/signup", upload.none(), async (req, res) => {
               Error("Error encrpting data : \n" + err);
             }
             connection.query(
-              `INSERT INTO Users (Email, Name, Password) VALUES ('${data.email.toLowerCase()}', '${
+              `INSERT INTO Users (Email, Name, Password, Contact) VALUES ('${data.email.toLowerCase()}', '${
                 data.name
-              }', '${result}');`,
+              }', '${result}', '${data.telephone}');`,
               (err, result) => {
                 if (err) {
                   Error("Error adding user : \n" + err);
