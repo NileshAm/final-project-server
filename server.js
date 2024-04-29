@@ -82,13 +82,13 @@ app.get("/test", (req, res) => {
 app.get("/home", async (req, res) => {
   try {
     const result1 = await DBConnect.queryPromise(
-      "SELECT * FROM Products WHERE `Status`=1 ORDER BY RAND() LIMIT 10 "
+      "SELECT * FROM Products WHERE `Status`=1 AND Stock > 0 ORDER BY RAND() LIMIT 10 "
     );
     const result2 = await DBConnect.queryPromise(
-      "SELECT * FROM Products WHERE `Status`=1 AND Category = 1 ORDER BY RAND() LIMIT 10 "
+      "SELECT * FROM Products WHERE `Status`=1 AND Category = 1 AND Stock > 0 ORDER BY RAND() LIMIT 10 "
     );
     const result3 = await DBConnect.queryPromise(
-      "SELECT * FROM Products WHERE `Status`=1 AND Category = 2 ORDER BY RAND() LIMIT 10 "
+      "SELECT * FROM Products WHERE `Status`=1 AND Category = 2 AND Stock > 0 ORDER BY RAND() LIMIT 10 "
     );
 
     let finalResult = [];
@@ -368,6 +368,7 @@ app.get("/brands", (req, res) => {
     res.json({ error: "Internal server error" });
   }
 });
+
 app.get("/category", (req, res) => {
   try {
     connection.query(
@@ -655,6 +656,107 @@ app.post("/admin/pickup", upload.none(), (req, res) => {
       res.json({ message: "Executed successfully", code: 200 });
     }
   });
+});
+
+app.get("/product", upload.none(), (req, res) => {
+  const id = req.query.id;
+
+  connection.query(`SELECT * FROM Products WHERE ID=${id}`, (err, result) => {
+    if (err) {
+      console.error("Error Fetching data : \n" + err);
+      res.json({ error: "Error Fetching data", code: "500" });
+    } else {
+      res.json(result);
+    }
+  });
+});
+
+app.get("/product/similar", upload.none(), (req, res) => {
+  const id = req.query.id;
+  connection.query(`CALL GetSimilarItems(${id})`, (err, result) => {
+    if (err) {
+      console.error("Error Fetching data : \n" + err);
+      res.json({ error: "Error Fetching data", code: "500" });
+    } else {
+      res.json(result);
+    }
+  });
+});
+
+app.post("/cart/add", upload.none(), (req, res) => {
+  const data = req.body;
+  if (req.session.user) {
+    connection.query(
+      `CALL AddToCart(${data.productID}, '${req.session.user.Email}', ${data.quantity})`,
+      (err, result) => {
+        if (err) {
+          console.error("Error Fetching data : \n" + err);
+          res.json({ error: "Error fetching data", code: 500 });
+        } else {
+          res.json({ message: "Item add to the Cart successfully", code: 200 });
+        }
+      }
+    );
+  } else {
+    res.json({ message: "Not logged In", code: 403 });
+  }
+});
+
+app.get("/product/reviews", upload.none(), (req, res) => {
+  connection.query(`CALL GetReviews(${req.query.id})`, (err, result) => {
+    if (err) {
+      console.error("Error fetching data : \n" + err);
+      res.json({ error: "Internal Server error", code: 500 });
+    } else {
+      result[0].forEach((element) => {
+        let date = element.Date.toLocaleDateString("zh-Hans-CN");
+        let time = element.Date.toTimeString().split(" ")[0];
+        element.Date = date + "T" + time;
+      });
+      res.json(result);
+    }
+  });
+});
+
+app.post("/product/reviews/change/:type", upload.none(), (req, res) => {
+  const data = req.body;
+  if (!req.session.user) {
+    res.json({ error: "Not logged in", code: 403 });
+    return;
+  }
+  let query = null;
+  if (req.params.type === "add") {
+    query = "SetRating";
+  } else if (req.params.type === "update") {
+    query = "UpdateRating";
+  } else {
+    res.json({ error: "Not Found", code: 404 });
+  }
+  connection.query(
+    `CALL ${query}(${data.ID}, '${req.session.user.Email}', ${data.Rating}, '${data.Description}')`,
+    (err, result) => {
+      if (err) {
+        console.error("Error Fetching data : \n" + err);
+        res.json({ error: "Internal Server Error", code: 500 });
+      } else {
+        res.json({ message: "Review Added successfully", code: 200 });
+      }
+    }
+  );
+});
+
+app.get("/product/reviews/user", upload.none(), (req, res) => {
+  connection.query(
+    `CALL GetUserReview(${req.query.id}, '${req.session.user.Email}')`,
+    (err, result) => {
+      if (err) {
+        console.error("Error fetching data : \n" + err);
+        res.json({ error: "Internal server Error", code: 500 });
+      } else {
+        res.json(result[0][0]);
+      }
+    }
+  );
 });
 
 app.listen(PORT, () => {
