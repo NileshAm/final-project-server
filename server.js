@@ -760,6 +760,31 @@ app.get("/product/reviews/user", upload.none(), (req, res) => {
   );
 });
 
+app.post("/add/:type", upload.none(), (req, res) => {
+  let table = null;
+  let column = null;
+  if (req.params.type === "brand") {
+    table = "Brands";
+    column = "Name";
+  } else if (req.params.type === "category") {
+    table = "Categories";
+    column = "Category";
+  } else {
+    res.sendStatus(404);
+    return;
+  }
+  connection.query(
+    `INSERT INTO ${table}(${column}) VALUES ('${req.body[req.params.type]}')`,
+    (err, result) => {
+      if (err) {
+        console.error("Error fetching data : \n" + err);
+        res.json({ error: "Internal server error", code: 500 });
+      } else {
+        res.json({ message: "Added successfully", code: 200 });
+      }
+    }
+  );
+});
 app.listen(PORT, () => {
   console.log(`Server lisening to port ${PORT}`);
 });
