@@ -156,6 +156,7 @@ app.post("/login/:userType", upload.none(), (req, res) => {
               req.session.user = {
                 Email: DBresult[0].Email,
                 Name: DBresult[0].Name,
+                Contact: DBresult[0].Contact,
               };
               if (type === "admin" && data.email === "admin@admin.com") {
                 req.session.user["isAdmin"] = true;
